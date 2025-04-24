@@ -1,0 +1,365 @@
+## Arquitectura del Sistema
+
+El sistema se compone de tres capas principales:
+
+1. **Capa de Datos:** MySQL con réplica secundaria para alta disponibilidad.
+2. **Capa de Negocio (Backend):** API RESTful en .NET 8.0 con EF Core y servicio de sincronización.
+3. **Capa de Presentación (Frontend):** Interfaz web responsiva consumiendo la API.
+
+```mermaid
+flowchart TD
+    A[Cliente HTTP] -->|GET/POST| B[API .NET 8.0]
+    B --> C[EF Core]
+    C --> D[(MySQL Master)]
+    C --> E[(MySQL Replica)]
+    A --> F[Frontend HTML/JS]
+    F -->|AJAX| B
+```  
+
+## Modelo de Datos
+
+![Modelo ER](./BD/modelo-er.png)
+
+El modelo incluye las entidades: `Clientes`, `Empleados`, `Médicos`, `Especialidades`, `CentrosMedicos`, `Consultas` y la tabla puente `AsignacionEspecialidades`.
+
+## Implementación
+
+### Frontend (HTML/CSS/JS)
+
+Este apartado detalla el **código real** de tu frontend según los archivos que proporcionaste:
+
+---
+
+#### 1. Estructura de Archivos
+```
+Frontend/
+├── html/
+│   ├── index.html
+│   ├── medicos.html
+│   ├── especialidades.html
+│   ├── centros-medicos.html
+│   ├── consultas.html
+│   ├── clientes.html
+│   └── empleados.html
+├── css/
+│   ├── reset.css
+│   └── style.css
+├── js/
+│   ├── main.js
+│   ├── medicos.js
+│   ├── especialidades.js
+│   ├── centros-medicos.js
+│   ├── consultas.js
+│   ├── clientes.js
+│   └── empleados.js
+└── server.js
+```
+
+---
+
+#### 2. HTML
+
+**index.html** (menú y contenedor dinámico)
+```html
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema Hospitalario</title>
+  <link rel="stylesheet" href="../css/reset.css">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="header">
+    <button id="menu-toggle">☰</button>
+    <h1>Sistema Hospitalario</h1>
+  </header>
+  <aside class="sidebar">
+    <nav>
+      <ul>
+        <li><a href="index.html">Inicio</a></li>
+        <li><a href="medicos.html">Médicos</a></li>
+        <li><a href="especialidades.html">Especialidades</a></li>
+        <li><a href="centros-medicos.html">Centros Médicos</a></li>
+        <li><a href="consultas.html">Consultas</a></li>
+        <li><a href="clientes.html">Clientes</a></li>
+        <li><a href="empleados.html">Empleados</a></li>
+      </ul>
+    </nav>
+  </aside>
+  <main class="content">
+    <!-- Cada página HTML tiene su propio contenido aquí -->
+  </main>
+  <script src="../js/main.js"></script>
+</body>
+</html>
+```
+
+**medicos.html**
+```html
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <!-- meta, title, estilos -->
+</head>
+<body>
+  <!-- Header + Sidebar incluídos -->
+  <main class="content">
+    <h2>Médicos</h2>
+    <div class="actions">
+      <input type="text" id="search-medico" placeholder="Buscar médico...">
+      <button id="new-medico">Nuevo Médico</button>
+    </div>
+    <table id="medicos-table">
+      <thead>
+        <tr><th>ID</th><th>Nombre</th><th>Teléfono</th><th>Acciones</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <form id="medico-form" class="modal">
+      <h3 id="form-title">Crear Médico</h3>
+      <label>Nombre: <input type="text" id="medico-nombre"></label>
+      <label>Apellido: <input type="text" id="medico-apellido"></label>
+      <label>Teléfono: <input type="text" id="medico-telefono"></label>
+      <button type="submit">Guardar</button>
+      <button type="button" id="close-medico-form">Cancelar</button>
+    </form>
+  </main>
+  <script src="../js/medicos.js"></script>
+</body>
+</html>
+```
+
+> **Nota:** Las páginas `especialidades.html`, `centros-medicos.html`, `consultas.html`, `clientes.html` y `empleados.html` utilizan la misma estructura: 
+> - **Actions bar:** búsqueda y botón nuevo.
+> - **Tabla** con `thead` y `tbody` vacíos.
+> - **Form Modal** (`.modal`) con campos específicos y botones de guardar/cancelar.
+
+---
+
+#### 3. CSS (style.css)
+```css
+:root {
+  --primary-color: #2c3e50;
+  --secondary-color: #18bc9c;
+  --font-family: 'Segoe UI', sans-serif;
+}
+
+/* Reset básico */
+* {
+  margin: 0; padding: 0; box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-family);
+  background: #ecf0f1;
+}
+.header {
+  background: var(--primary-color);
+  color: #fff;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+}
+.sidebar {
+  width: 200px;
+  background: var(--secondary-color);
+  position: fixed;
+  height: 100%;
+  overflow-y: auto;
+}
+.content {
+  margin-left: 200px;
+  padding: 2rem;
+}
+.actions {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.actions input {
+  padding: 0.5rem;
+  width: 200px;
+}
+table {
+  width: 100%; border-collapse: collapse;
+}
+table th, table td {
+  border: 1px solid #bdc3c7;
+  padding: 0.5rem;
+  text-align: left;
+}
+table th {
+  background: var(--primary-color);
+  color: #fff;
+  position: sticky;
+  top: 0;
+}
+button {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: var(--secondary-color);
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+button:hover { opacity: 0.9; }
+
+/* Modal */
+.modal {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: #fff;
+  padding: 2rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  display: none;
+  z-index: 100;
+}
+.modal.active { display: block; }
+
+.overlay {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5);
+  display: none;
+  z-index: 50;
+}
+.overlay.active { display: block; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar { width: 60px; }
+  .content { margin-left: 60px; }
+}
+```
+
+---
+
+#### 4. JavaScript
+
+**main.js** (menu y overlay)
+```js
+const menuBtn = document.getElementById('menu-toggle');
+const sidebar = document.querySelector('.sidebar');
+const overlay = document.createElement('div');
+overlay.className = 'overlay';
+document.body.append(overlay);
+
+menuBtn.addEventListener('click', () => {
+  sidebar.classList.toggle('collapsed');
+  overlay.classList.toggle('active');
+});
+overlay.addEventListener('click', () => {
+  sidebar.classList.remove('collapsed');
+  overlay.classList.remove('active');
+});
+```
+
+**medicos.js**
+```js
+const apiMedicos = '/api/medicos';
+const tableMedicos = document.querySelector('#medicos-table tbody');
+const formMedico = document.getElementById('medico-form');
+const btnNewMedico = document.getElementById('new-medico');
+const inputSearch = document.getElementById('search-medico');
+let editId = null;
+
+async function cargarMedicos(query = '') {
+  const res = await fetch(apiMedicos + (query ? `?search=${query}` : ''));
+  const data = await res.json();
+  tableMedicos.innerHTML = data.map(m => `
+    <tr>
+      <td>${m.medicoId}</td>
+      <td>${m.nombre} ${m.apellido}</td>
+      <td>${m.telefono}</td>
+      <td>
+        <button onclick="openEdit(${m.medicoId})">✎</button>
+        <button onclick="eliminarMedico(${m.medicoId})">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+btnNewMedico.onclick = () => { editId = null; openForm(); };
+inputSearch.oninput = e => cargarMedicos(e.target.value);
+
+function openForm() {
+  formMedico.classList.add('active');
+}
+function closeForm() {
+  formMedico.classList.remove('active');
+  formMedico.reset();
+}
+
+document.getElementById('close-medico-form').onclick = closeForm;
+
+formMedico.onsubmit = async e => {
+  e.preventDefault();
+  const body = {
+    nombre: e.target['medico-nombre'].value,
+    apellido: e.target['medico-apellido'].value,
+    telefono: e.target['medico-telefono'].value
+  };
+  const method = editId ? 'PUT' : 'POST';
+  const url = editId ? `${apiMedicos}/${editId}` : apiMedicos;
+  await fetch(url, { method, headers: { 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+  closeForm();
+  cargarMedicos();
+};
+
+async function openEdit(id) {
+  editId = id;
+  const res = await fetch(`${apiMedicos}/${id}`);
+  const m = await res.json();
+  formMedico['medico-nombre'].value = m.nombre;
+  formMedico['medico-apellido'].value = m.apellido;
+  formMedico['medico-telefono'].value = m.telefono;
+  openForm();
+}
+
+async function eliminarMedico(id) {
+  if (!confirm('¿Eliminar este médico?')) return;
+  await fetch(`${apiMedicos}/${id}`, { method: 'DELETE' });
+  cargarMedicos();
+}
+
+document.addEventListener('DOMContentLoaded', () => cargarMedicos());
+```
+
+> **Los ficheros** `especialidades.js`, `centros-medicos.js`, `consultas.js`, `clientes.js` y `empleados.js` **siguen la misma estructura**: 
+> 1. Selección de tabla y formulario.  
+> 2. Funciones `cargarX`, `openEditX`, `eliminarX`, `onsubmit`.  
+> 3. Fetch a `/api/X` con GET, POST, PUT, DELETE.
+
+---
+
+#### 5. Servidor estático (server.js)
+```js
+const express = require('express');
+const path = require('path');
+const app = express();
+
+app.use(express.static(path.join(__dirname, 'html')));
+app.use(express.static(path.join(__dirname, 'css')));
+app.use(express.static(path.join(__dirname, 'js')));
+
+app.listen(3000, () => console.log('Frontend servido en http://localhost:3000'));```
+
+---
+## Tecnologías y Herramientas
+
+| Componente            | Herramienta / Versión        |
+|-----------------------|------------------------------|
+| Lenguaje backend      | C# / .NET 8.0                |
+| ORM                   | Entity Framework Core        |
+| Base de datos         | MySQL 8.0 (Master-Slave)     |
+| Frontend              | HTML5, CSS3, JavaScript ES6  |
+| Servidor estático     | Node.js 18, Express 4.x      |
+| Documentación API     | Swagger / OpenAPI            |
+| IDE                   | Visual Studio 2022           |
+| Control de versiones  | Git                          |
+| Testing de API        | Postman                      |
+
