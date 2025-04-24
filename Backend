@@ -1,0 +1,295 @@
+## Modelo de Datos
+
+![Modelo ER](./BD/modelo-er.png)
+
+El modelo incluye las entidades: `Clientes`, `Empleados`, `Médicos`, `Especialidades`, `CentrosMedicos`, `Consultas` y la tabla puente `AsignacionEspecialidades`.
+
+## Implementación
+
+### Backend (.NET 8.0)
+
+Este apartado incluye **todo el código** del proyecto backend: modelos, contexto, servicio de sincronización y controladores.
+
+---
+
+#### 1. Program.cs
+```csharp
+using Microsoft.EntityFrameworkCore;
+using SistemaHospitalario.Distributed;
+using SistemaHospitalario.Distributed.Services;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Configuración de EF Core con MySQL
+builder.Services.AddDbContext<CentroMedicoContext>(opt =>
+    opt.UseMySql(builder.Configuration.GetConnectionString("DefaultConnection"),
+        new MySqlServerVersion(new Version(8, 0, 28))));
+
+// Registro de servicios
+builder.Services.AddScoped<DbSyncService>();
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+
+// Middleware
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+app.UseHttpsRedirection();
+app.UseCors(cfg => cfg.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+app.MapControllers();
+
+// Sincronización inicial al arrancar
+using(var scope = app.Services.CreateScope())
+{
+    var syncService = scope.ServiceProvider.GetRequiredService<DbSyncService>();
+    await syncService.SincronizarAsync();
+}
+
+app.Run();
+```
+
+---
+
+#### 2. Modelos (POCOs)
+
+**Cliente.cs**
+```csharp
+namespace SistemaHospitalario.Distributed.Models
+{
+    public class Cliente
+    {
+        public int ClienteId { get; set; }
+        public string Nombre { get; set; }
+        public string Apellido { get; set; }
+        public string Correo { get; set; }
+        public string Telefono { get; set; }
+        public ICollection<Consulta> Consultas { get; set; }
+    }
+}
+```
+
+**Consulta.cs**
+```csharp
+namespace SistemaHospitalario.Distributed.Models
+{
+    public class Consulta
+    {
+        public int ConsultaId { get; set; }
+        public int MedicoId { get; set; }
+        public int ClienteId { get; set; }
+        public DateTime FechaConsulta { get; set; }
+        public string Diagnostico { get; set; }
+        public string Tratamiento { get; set; }
+
+        public Cliente Cliente { get; set; }
+        public Medico Medico { get; set; }
+    }
+}
+```
+
+**Medico.cs**
+```csharp
+namespace SistemaHospitalario.Distributed.Models
+{
+    public class Medico
+    {
+        public int MedicoId { get; set; }
+        public string Nombre { get; set; }
+        public string Apellido { get; set; }
+        public string Email { get; set; }
+        public string Telefono { get; set; }
+        public int CentroMedicoId { get; set; }
+
+        public CentroMedico CentroMedico { get; set; }
+        public ICollection<AsignacionEspecialidad> Asignaciones { get; set; }
+    }
+}
+```
+
+**Especialidad.cs**
+```csharp
+namespace SistemaHospitalario.Distributed.Models
+{
+    public class Especialidad
+    {
+        public int EspecialidadId { get; set; }
+        public string Nombre { get; set; }
+        public string Descripcion { get; set; }
+
+        public ICollection<AsignacionEspecialidad> Asignaciones { get; set; }
+    }
+}
+```
+
+**CentroMedico.cs**
+```csharp
+namespace SistemaHospitalario.Distributed.Models
+{
+    public class CentroMedico
+    {
+        public int CentroMedicoId { get; set; }
+        public string Nombre { get; set; }
+        public string Ciudad { get; set; }
+        public string Direccion { get; set; }
+        public string Telefono { get; set; }
+
+        public ICollection<Medico> Medicos { get; set; }
+    }
+}
+```
+
+**Empleado.cs**
+```csharp
+namespace SistemaHospitalario.Distributed.Models
+{
+    public class Empleado
+    {
+        public int EmpleadoId { get; set; }
+        public string Nombre { get; set; }
+        public string Apellido { get; set; }
+        public string Cargo { get; set; }
+        public string Email { get; set; }
+        public string Telefono { get; set; }
+    }
+}
+```
+
+**AsignacionEspecialidad.cs**
+```csharp
+namespace SistemaHospitalario.Distributed.Models
+{
+    public class AsignacionEspecialidad
+    {
+        public int AsignacionId { get; set; }
+        public int MedicoId { get; set; }
+        public int EspecialidadId { get; set; }
+
+        public Medico Medico { get; set; }
+        public Especialidad Especialidad { get; set; }
+    }
+}
+```
+
+**SyncLog.cs**
+```csharp
+namespace SistemaHospitalario.Distributed.Models
+{
+    public class SyncLog
+    {
+        public int SyncLogId { get; set; }
+        public string EntityName { get; set; }
+        public int EntityId { get; set; }
+        public bool Procesado { get; set; }
+        public DateTime FechaRegistro { get; set; }
+    }
+}
+```
+
+---
+
+#### 3. Contexto EF Core (CentroMedicoContext.cs)
+```csharp
+using Microsoft.EntityFrameworkCore;
+using SistemaHospitalario.Distributed.Models;
+
+namespace SistemaHospitalario.Distributed
+{
+    public class CentroMedicoContext : DbContext
+    {
+        public CentroMedicoContext(DbContextOptions<CentroMedicoContext> options)
+            : base(options) { }
+
+        public DbSet<Cliente> Clientes { get; set; }
+        public DbSet<Consulta> Consultas { get; set; }
+        public DbSet<Medico> Medicos { get; set; }
+        public DbSet<Especialidad> Especialidades { get; set; }
+        public DbSet<CentroMedico> CentrosMedicos { get; set; }
+        public DbSet<Empleado> Empleados { get; set; }
+        public DbSet<AsignacionEspecialidad> AsignacionEspecialidades { get; set; }
+        public DbSet<SyncLog> SyncLogs { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder model)
+        {
+            // Cliente-Consulta (1:N)
+            model.Entity<Consulta>()
+                .HasOne(c => c.Cliente)
+                .WithMany(c => c.Consultas)
+                .HasForeignKey(c => c.ClienteId);
+
+            // Medico-CentroMedico (N:1)
+            model.Entity<Medico>()
+                .HasOne(m => m.CentroMedico)
+                .WithMany(c => c.Medicos)
+                .HasForeignKey(m => m.CentroMedicoId);
+
+            // Médico-Especialidad (N:M)
+            model.Entity<AsignacionEspecialidad>()
+                .HasKey(a => a.AsignacionId);
+            model.Entity<AsignacionEspecialidad>()
+                .HasOne(a => a.Medico)
+                .WithMany(m => m.Asignaciones)
+                .HasForeignKey(a => a.MedicoId);
+            model.Entity<AsignacionEspecialidad>()
+                .HasOne(a => a.Especialidad)
+                .WithMany(e => e.Asignaciones)
+                .HasForeignKey(a => a.EspecialidadId);
+        }
+    }
+}
+```
+
+---
+
+#### 4. Servicio de Sincronización (DbSyncService.cs)
+```csharp
+using Microsoft.EntityFrameworkCore;
+using SistemaHospitalario.Distributed.Models;
+
+namespace SistemaHospitalario.Distributed.Services
+{
+    public class DbSyncService
+    {
+        private readonly CentroMedicoContext _context;
+
+        public DbSyncService(CentroMedicoContext context)
+        {
+            _context = context;
+        }
+
+        public async Task SincronizarAsync()
+        {
+            var logs = await _context.SyncLogs
+                .Where(l => !l.Procesado)
+                .ToListAsync();
+            foreach (var log in logs)
+            {
+                // Lógica de procesamiento genérico
+                log.Procesado = true;
+                _context.SyncLogs.Update(log);
+            }
+            await _context.SaveChangesAsync();
+        }
+    }
+}
+```
+
+---
+
+#### 5. Controladores API
+Cada controlador implementa los métodos **GetAll**, **GetById**, **Create**, **Update**, **Delete**.
+
+- `ClientesController.cs`
+- `ConsultasController.cs`
+- `MedicosController.cs`
+- `EspecialidadesController.cs`
+- `CentrosMedicosController.cs`
+- `EmpleadosController.cs`
+- `AsignacionEspecialidadesController.cs`
+
+*(Incluye cada archivo con el mismo patrón de inyección de `CentroMedicoContext` y uso de `EntityState` para Update.)*
+
